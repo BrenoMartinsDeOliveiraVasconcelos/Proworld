@@ -24,15 +24,11 @@ import datetime
 SCREEN_WIDTH = 1024
 SCREEN_HEIGHT = 768
 TILE_SIZE = 32
-WORLD_WIDTH = 1024   # in tiles
-WORLD_HEIGHT = 1024
+WORLD_WIDTH = 512   # in tiles
+WORLD_HEIGHT = 512
 
 # Colours
-COLOR_GRASS = (34, 139, 34)
 COLOR_DIRT = (139, 90, 43)
-COLOR_SAND = (238, 203, 173)
-COLOR_WATER = (65, 105, 225)
-COLOR_ROCK = (128, 128, 128)
 COLOR_PLAYER = (255, 255, 255)
 COLOR_HP_BAR = (255, 0, 0)
 COLOR_HP_BG = (50, 50, 50)
@@ -72,12 +68,12 @@ ELEMENT_COLORS = {
 BASE_P_SPEED = 220.0
 BASE_CREATURE_SPEED = 90.0
 PLAYER_RECOVER_TIME = 1 # in seconds
-PLAYER_RECOVER_RATE = 0.005
+PLAYER_RECOVER_RATE = 0.01
 VEGETATION_BOOST = 32
 
 
 # Creature settings
-CREATURE_MAX_COUNT = int((WORLD_WIDTH*WORLD_HEIGHT)/512)
+CREATURE_MAX_COUNT = int((WORLD_WIDTH*WORLD_HEIGHT)/300)
 CREATURE_HP = 100
 CREATURE_SPEED = BASE_CREATURE_SPEED
 CREATURE_ATTACK_RANGE = 120.0
@@ -149,6 +145,7 @@ class Tile:
         self.block_color = None        # index into BLOCK_COLORS or None
         self.terrain_color = color
         self.speed_impact = speed_impact
+        self.allow_spawn = False
 
 # ----------------------------------------------------------------------
 # Creature class
@@ -260,10 +257,18 @@ class AttackProjectile:
 # ----------------------------------------------------------------------
 class Game:
     def __init__(self):
-        # Terrain type, color and speed impact
+        # Terrain type, max height (0-1), color, speed impact, possible vegetations (list of tuples containing type and chance) and allow spawn
         self.types = [
-                    ("water", 0.25, COLOR_WATER, 0.5), ("sand", 0.35, COLOR_SAND, 1.25), ("grass", 0.7, COLOR_GRASS, 1), ("rock", 1.0, COLOR_ROCK, 0.5)]
-  
+            # (Type, Max Height, Color (R,G,B), Speed Impact, [Vegetation], Allow Spawn)
+            ("deep_water",   0.35, (119, 158, 203), 0.30, [], False), 
+            ("water",        0.45, (174, 198, 207), 0.50, [], False),
+            ("sand",         0.52, (238, 217, 196), 1.25, [("bush", 0.02)], True),
+            ("dirt",         0.60, (188, 152, 126), 1.10, [("bush", 0.05), ("tree", 0.05)], True),
+            ("light_grass",  0.70, (161, 202, 165), 1.00, [("grass", 0.4), ("tree", 0.15)], True),
+            ("forest_grass", 0.80, (119, 160, 119), 0.85, [("tree", 0.5), ("bush", 0.3)], True),
+            ("gravel",       0.90, (180, 176, 170), 0.70, [("bush", 0.05)], True),
+            ("snow",         1.00, (235, 238, 240), 0.60, [], True)
+        ]
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption("Procedural World")
@@ -311,31 +316,54 @@ class Game:
                 tile_type = ""
                 terrain_color = (0, 0, 0)
                 speed_impact = 0
+                allow_spawn = False
 
                 for t in self.types:
-                    if val >= t[1]:
+                    if val > t[1]:
                         continue
                     else:
                         tile_type = t[0]
                         terrain_color = t[2]
                         speed_impact = t[3]
+                        allow_spawn = t[5]
                         break
-
-                self.tiles[tx][ty] = Tile(tile_type, terrain_color, speed_impact)
+                        
+                tile = Tile(tile_type, terrain_color, speed_impact)
+                tile.allow_spawn = allow_spawn
+                self.tiles[tx][ty] = tile
 
         # vegetation: trees and bushes on grass/dirt
         for tx in range(WORLD_WIDTH):
             for ty in range(WORLD_HEIGHT):
                 tile = self.tiles[tx][ty]
-                if tile.type == "grass":
+                tile_type = tile.type
+                tile_vegetation = []
+
+                for tp in self.types:
+                    if tp[0] == tile_type:
+                        tuple_size = len(tp)
+
+                        if tuple_size >= 1:
+                            tile_vegetation = tp[4]
+                        else:
+                            tile.vegetation = None
+                        
+                        break
+
+                
+                vegetation_list_size = len(tile_vegetation)
+
+                if vegetation_list_size == 1:
+                    if random.random() < tile_vegetation[0][1]:
+                        tile.vegetation = tile_vegetation[0][0]
+                elif vegetation_list_size > 1:
                     vnoise = self._sample_noise(tx + 1000, ty + 1000, 0.15)
-                    if vnoise > 0.55:
-                        tile.vegetation = "tree"
-                    elif vnoise > 0.3:
-                        tile.vegetation = "bush"
-                elif tile.type == "sand":
-                    if random.random() < 0.05:
-                        tile.vegetation = "bush"
+
+                    sorted_vegetations = sorted(tile_vegetation, key=lambda x: x[1], reverse=True)
+
+                    for veg in sorted_vegetations:
+                        if vnoise > veg[1]:
+                            tile.vegetation = veg[0]
 
         # spawn creatures
         elements = list(ELEMENT_COLORS.keys())
@@ -344,7 +372,7 @@ class Game:
                 cx = random.randint(0, WORLD_WIDTH-1) * TILE_SIZE + TILE_SIZE//2
                 cy = random.randint(0, WORLD_HEIGHT-1) * TILE_SIZE + TILE_SIZE//2
                 tile = self.tiles[int(cx//TILE_SIZE)][int(cy//TILE_SIZE)]
-                if tile.type not in ("water",):
+                if tile.allow_spawn:
                     element = random.choice(elements)
                     behavior = random.choice(["aggressive", "passive"])
                     self.creatures.append(Creature(cx, cy, element, behavior))
@@ -385,7 +413,7 @@ class Game:
                     if diff > math.pi: diff = 2*math.pi - diff
                     if diff < math.radians(55):
                         if creature.take_damage(PLAYER_ATTACK_DAMAGE):
-                            self.player_xp += 1
+                            self._increase_xp(1)
                             self.creatures.remove(creature)
                             self._spawn_death_particles(creature.x, creature.y, creature.element)
                         break  # attack hits only one creature
@@ -529,7 +557,7 @@ class Game:
 
         # placed block overlay
         if tile.block_color is not None:
-            block_rect = pygame.Rect(tile_x + 2 - self.camera_x, tile_y + 2 - self.camera_y, TILE_SIZE-4, TILE_SIZE-4)
+            block_rect = pygame.Rect(tile_x - self.camera_x, tile_y - self.camera_y, TILE_SIZE, TILE_SIZE)
             pygame.draw.rect(screen, BLOCK_COLORS[tile.block_color], block_rect)
 
         # vegetation
@@ -594,9 +622,20 @@ class Game:
         swatch_rect = pygame.Rect(SCREEN_WIDTH - 100, SCREEN_HEIGHT - 60, 40, 40)
         pygame.draw.rect(screen, BLOCK_COLORS[self.selected_color], swatch_rect)
         pygame.draw.rect(screen, (255,255,255), swatch_rect, 2)
+
+        # Texts
         font = pygame.font.SysFont(None, 24)
         text = font.render(f"Color {self.selected_color+1}", True, (255,255,255))
+        xp_text = font.render(f"Points: {self.player_xp}", True, (255,255,255))
+        screen.blit(xp_text, (40, SCREEN_HEIGHT - 60))
         screen.blit(text, (SCREEN_WIDTH - 150, SCREEN_HEIGHT - 80))
+
+
+    def _increase_xp(self, amount: int):
+        self.player_xp += amount
+
+        # Adjust max hp accordingly
+        self.player_max_hp = PLAYER_MAX_HP + (PLAYER_MAX_HP*(self.player_xp/64))
 
     def run(self):
         init_time = datetime.datetime.now().timestamp()
@@ -609,12 +648,13 @@ class Game:
                     if event.key == pygame.K_ESCAPE:
                         self.running = False
                     # color selection
-                    if event.key in range(pygame.K_1, pygame.K_9):
-                        idx = event.key - pygame.K_1
-                        if pygame.key.get_mods() & pygame.KMOD_SHIFT:
-                            idx += 8
-                        if 0 <= idx < 16:
-                            self.selected_color = idx
+                    if event.key == pygame.K_LEFT:
+                        self.selected_color -= 1
+                    elif event.key == pygame.K_RIGHT:
+                        self.selected_color += 1
+
+                    if self.selected_color < 0 or self.selected_color >= len(BLOCK_COLORS):
+                        self.selected_color = 0
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # left click = attack
                         if self.attack_cooldown == 0:
