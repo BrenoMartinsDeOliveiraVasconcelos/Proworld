@@ -23,13 +23,14 @@ import datetime
 # ----------------------------------------------------------------------
 SCREEN_WIDTH = 1024
 SCREEN_HEIGHT = 768
-TILE_SIZE = 16
-WORLD_WIDTH = 512   # in tiles
-WORLD_HEIGHT = 512
+TILE_SIZE = 32
+WORLD_WIDTH = 2048   # in tiles
+WORLD_HEIGHT = 2048
+ELEVATION_BOOST = 0.2
 
 # Colours
 COLOR_DIRT = (139, 90, 43)
-COLOR_PLAYER = (255, 255, 255)
+COLOR_PLAYER = (20, 20, 20)
 COLOR_HP_BAR = (255, 0, 0)
 COLOR_HP_BG = (50, 50, 50)
 
@@ -67,13 +68,15 @@ ELEMENT_COLORS = {
 # Base vallues
 BASE_P_SPEED = 220.0
 BASE_CREATURE_SPEED = 90.0
-PLAYER_RECOVER_TIME = 1 # in seconds
+PLAYER_RECOVER_TIME = 0.1 # in seconds
 PLAYER_RECOVER_RATE = 0.01
 VEGETATION_BOOST = 32
 
 
 # Creature settings
-CREATURE_MAX_COUNT = int((WORLD_WIDTH*WORLD_HEIGHT)/300)
+TILE_MULTIPLIER = 32
+CREATURE_MAX_COUNT = int((WORLD_WIDTH*WORLD_HEIGHT)/(TILE_MULTIPLIER*TILE_SIZE))
+print(CREATURE_MAX_COUNT)
 CREATURE_HP = 100
 CREATURE_SPEED = BASE_CREATURE_SPEED
 CREATURE_ATTACK_RANGE = 120.0
@@ -87,6 +90,7 @@ PLAYER_MAX_HP = 100
 PLAYER_ATTACK_COOLDOWN = 0.35
 PLAYER_ATTACK_DAMAGE = 35
 PLAYER_ATTACK_RANGE = 55.0     # distance in front
+PLAYER_RADIUS = 20
 
 # Attack projectile settings
 PROJECTILE_SPEED = 300.0
@@ -146,6 +150,10 @@ class Tile:
         self.terrain_color = color
         self.speed_impact = speed_impact
         self.allow_spawn = False
+        self.damage = 0
+        self.speed_bost = 0
+        self.placeable = True
+        self.height = 0.0
 
 # ----------------------------------------------------------------------
 # Creature class
@@ -156,15 +164,18 @@ class Creature:
         self.y = y
         self.vx = 0.0
         self.vy = 0.0
-        self.speed = CREATURE_SPEED
+
         self.element = element
         self.behavior = behavior      # "aggressive" or "passive"
-        self.hp = CREATURE_HP
-        self.max_hp = CREATURE_HP
+
         self.attack_cooldown = random.uniform(0, CREATURE_ATTACK_COOLDOWN)
         # visual shape
-        self.shape = random.choice(["circle", "square", "triangle", "diamond"])
-        self.size = random.randint(14, 22)
+        self.shape = random.choice(["circle"])
+        self.size = random.randint(int(TILE_SIZE/4), int(TILE_SIZE*3))
+        self.speed = CREATURE_SPEED/(self.size/16)
+        self.speed_temp = self.speed
+        self.max_hp = CREATURE_HP + self.size
+        self.hp = self.max_hp
         # random wander
         self.wander_timer = random.uniform(0, 2)
         self.wander_angle = random.uniform(0, 2*math.pi)
@@ -181,8 +192,8 @@ class Creature:
             if dist < CREATURE_SIGHT_RANGE:
                 # chase player
                 if dist > 1:
-                    self.vx = (dx / dist) * self.speed
-                    self.vy = (dy / dist) * self.speed
+                    self.vx = (dx / dist) * self.speed_temp
+                    self.vy = (dy / dist) * self.speed_temp
                 # attack if close enough and cooldown ready
                 if dist < CREATURE_ATTACK_RANGE and self.attack_cooldown == 0:
                     self.attack(attacks, player_x, player_y)
@@ -191,8 +202,8 @@ class Creature:
             if dist < CREATURE_SIGHT_RANGE:
                 # flee
                 if dist > 0.1:
-                    self.vx = -(dx / dist) * self.speed
-                    self.vy = -(dy / dist) * self.speed
+                    self.vx = -(dx / dist) * self.speed_temp
+                    self.vy = -(dy / dist) * self.speed_temp
                 return
 
         # random wandering
@@ -200,14 +211,14 @@ class Creature:
         if self.wander_timer <= 0:
             self.wander_angle = random.uniform(0, 2*math.pi)
             self.wander_timer = random.uniform(1.5, 3.0)
-        self.vx = math.cos(self.wander_angle) * self.speed * 0.5
-        self.vy = math.sin(self.wander_angle) * self.speed * 0.5
+        self.vx = math.cos(self.wander_angle) * self.speed_temp * 0.5
+        self.vy = math.sin(self.wander_angle) * self.speed_temp * 0.5
 
     def attack(self, attacks: list, target_x, target_y):
         self.attack_cooldown = CREATURE_ATTACK_COOLDOWN
         angle = math.atan2(target_y - self.y, target_x - self.x)
         attacks.append(AttackProjectile(
-            self.x, self.y, angle, self.element, damage=CREATURE_ATTACK_DAMAGE
+            self.x, self.y, angle, self.element, damage=(CREATURE_ATTACK_DAMAGE+self.size)
         ))
 
     def take_damage(self, amount):
@@ -259,13 +270,13 @@ class Game:
     def __init__(self):
         # Terrain type, max height (0-1), color, speed impact, possible vegetations (list of tuples containing type and chance) and allow spawn
         self.types = [
-            # (Type, Max Height, Color (R,G,B), Speed Impact, [Vegetation], Allow Spawn)
-            ("deep_water",    0.35, (0, 102, 204),   0.30, [], False),
-            ("shallow_water", 0.45, (64, 164, 223),  0.50, [], False),
-            ("sand",          0.52, (255, 204, 102), 1.25, [("bush", 0.02)], True),
-            ("forest",        0.75, (76, 175, 80),   0.85, [("tree", 0.4), ("bush", 0.2)], True),
-            ("mountain",      0.90, (140, 140, 140), 0.70, [("bush", 0.05)], True),
-            ("snow",          1.00, (240, 248, 255), 0.60, [], True)
+            # (Type, Max Height, Color (R,G,B), Speed Impact, [Vegetation], Allow Spawn, Can place blocks)
+            ("deep_water",    0.35, (0, 102, 204),   0.30, [], False, False),
+            ("shallow_water", 0.45, (64, 164, 223),  0.50, [], False, True),
+            ("sand",          0.52, (255, 204, 102), 1.25, [("bush", 0.02)], True, True),
+            ("forest",        0.75, (76, 175, 80),   0.85, [("tree", 0.08), ("bush", 0.03)], True, True),
+            ("mountain",      0.85, (140, 140, 140), 0.70, [("bush", 0.05)], True, True),
+            ("snow",          1.00, (240, 248, 255), 0.60, [], True, True)
         ]
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -285,6 +296,9 @@ class Game:
         self.attack_cooldown = 0.0
         self.selected_color = 0  # 0-15
         self.player_xp = 0
+        self.player_radius = PLAYER_RADIUS
+        self.player_range = PLAYER_ATTACK_RANGE
+        self.player_damage = PLAYER_ATTACK_DAMAGE
 
         # entities
         self.creatures: List[Creature] = []
@@ -303,31 +317,46 @@ class Game:
         return self.perlin.noise(x * scale, y * scale)
 
     def _generate_world(self):
-                     
+        color_variation = 4
+        generation_start = datetime.datetime.now().timestamp()
         # ground type based on height noise
         for tx in range(WORLD_WIDTH):
             for ty in range(WORLD_HEIGHT):
                 h = self._sample_noise(tx, ty, 0.06)
                 # convert to 0..1 approx
                 val = (h + 1) * 0.5
+                nx = 2.0 * tx / WORLD_WIDTH - 1.0
+                ny = 2.0 * ty / WORLD_HEIGHT - 1.0
+
+                dist = math.hypot(nx, ny)
+
+                val = val + ELEVATION_BOOST - (dist * dist)
+
+                val = max(0.0, min(1.0, val))
 
                 tile_type = ""
                 terrain_color = (0, 0, 0)
                 speed_impact = 0
                 allow_spawn = False
+                placeable = True
+
+                k_factor = 0.60+val/2
 
                 for t in self.types:
                     if val > t[1]:
                         continue
                     else:
                         tile_type = t[0]
-                        terrain_color = t[2]
+                        terrain_color = tuple([min(255, x*k_factor) for x in t[2]])            
                         speed_impact = t[3]
                         allow_spawn = t[5]
+                        placeable = t[6]
                         break
                         
                 tile = Tile(tile_type, terrain_color, speed_impact)
                 tile.allow_spawn = allow_spawn
+                tile.placeable = placeable
+                tile.height = val
                 self.tiles[tx][ty] = tile
 
         # vegetation: trees and bushes on grass/dirt
@@ -348,7 +377,6 @@ class Game:
                         
                         break
 
-                
                 vegetation_list_size = len(tile_vegetation)
 
                 if vegetation_list_size == 1:
@@ -362,6 +390,7 @@ class Game:
                     for veg in sorted_vegetations:
                         if vnoise > veg[1]:
                             tile.vegetation = veg[0]
+                            break
 
         # spawn creatures
         elements = list(ELEMENT_COLORS.keys())
@@ -375,6 +404,10 @@ class Game:
                     behavior = random.choice(["aggressive", "passive"])
                     self.creatures.append(Creature(cx, cy, element, behavior))
                     break
+        
+        generation_end = datetime.datetime.now().timestamp()
+
+        print(f"Took {generation_end - generation_start:.2f} seconds to generate")
 
     def _get_tile_at(self, world_x, world_y) -> Optional[Tile]:
         tx = int(world_x // TILE_SIZE)
@@ -390,7 +423,7 @@ class Game:
         world_my = my + self.camera_y
         angle = math.atan2(world_my - self.player_y, world_mx - self.player_x)
         # attack rectangle
-        attack_dist = PLAYER_ATTACK_RANGE
+        attack_dist = self.player_range
         ax = self.player_x + math.cos(angle) * attack_dist/2
         ay = self.player_y + math.sin(angle) * attack_dist/2
         # define rectangle width 30, length attack_dist
@@ -400,8 +433,9 @@ class Game:
         # use a circle check with radius attack_dist/2 + some, and angle constraint.
         # For simplicity: dot product to check if in front.
         for creature in self.creatures[:]:
-            dx = creature.x - self.player_x
-            dy = creature.y - self.player_y
+            dx = (creature.x - self.player_x)
+            dy = (creature.y - self.player_y)
+
             if abs(dx) < attack_dist and abs(dy) < attack_dist:
                 dist = math.hypot(dx, dy)
                 if dist < attack_dist + creature.size:
@@ -410,8 +444,14 @@ class Game:
                     diff = abs(creature_angle - angle)
                     if diff > math.pi: diff = 2*math.pi - diff
                     if diff < math.radians(55):
-                        if creature.take_damage(PLAYER_ATTACK_DAMAGE):
-                            self._increase_xp(1)
+                        if creature.take_damage(self.player_damage):
+                            xp_boost = 1
+                            if creature.behavior == 'passive':
+                                xp_boost = 0.25
+
+                            xp_increase = 1+(creature.size*xp_boost)
+                            print(f"XP +{xp_increase}")
+                            self._increase_xp(xp_increase)
                             self.creatures.remove(creature)
                             self._spawn_death_particles(creature.x, creature.y, creature.element)
                         break  # attack hits only one creature
@@ -430,7 +470,7 @@ class Game:
                         # check if player is close enough to tree center
                         cx = nx * TILE_SIZE + TILE_SIZE//2
                         cy = ny * TILE_SIZE + TILE_SIZE//2
-                        if math.hypot(cx - self.player_x, cy - self.player_y) < PLAYER_ATTACK_RANGE + 20:
+                        if math.hypot(cx - self.player_x, cy - self.player_y) < self.player_range + 20:
                             # also angle check
                             tree_angle = math.atan2(cy - self.player_y, cx - self.player_x)
                             diff = abs(tree_angle - angle)
@@ -441,6 +481,9 @@ class Game:
                                 self.player_hp += (self.player_max_hp/VEGETATION_BOOST)
                                 if self.player_hp >= self.player_max_hp:
                                     self.player_hp = self.player_max_hp
+
+                                # Increase slighlty player xp
+                                self._increase_xp(0.1)
                             
                                 # spawn wood particles
                                 for _ in range(8):
@@ -461,13 +504,14 @@ class Game:
             if tile.block_color is not None:
                 dist_to_tile = math.hypot(tx*TILE_SIZE + TILE_SIZE//2 - self.player_x,
                                           ty*TILE_SIZE + TILE_SIZE//2 - self.player_y)
-                if dist_to_tile < PLAYER_ATTACK_RANGE + 20:
+                if dist_to_tile < self.player_range + 20:
                     tile_angle = math.atan2(ty*TILE_SIZE + TILE_SIZE//2 - self.player_y,
                                             tx*TILE_SIZE + TILE_SIZE//2 - self.player_x)
                     diff = abs(tile_angle - angle)
                     if diff > math.pi: diff = 2*math.pi - diff
                     if diff < math.radians(70):
                         tile.block_color = None
+                        tile.speed_bost = 0
 
     def _spawn_death_particles(self, x, y, element):
         color = ELEMENT_COLORS.get(element, (200,200,200))
@@ -530,10 +574,10 @@ class Game:
 
         tile = self._get_tile_at(self.player_x, self.player_y)
 
-        PLAYER_SPEED = BASE_P_SPEED * tile.speed_impact
+        player_speed = BASE_P_SPEED * (tile.speed_impact + tile.speed_bost)
         
-        self.player_x += dx * PLAYER_SPEED * dt
-        self.player_y += dy * PLAYER_SPEED * dt
+        self.player_x += dx * player_speed * dt
+        self.player_y += dy * player_speed * dt
 
 
         # keep player inside world bounds
@@ -623,17 +667,24 @@ class Game:
 
         # Texts
         font = pygame.font.SysFont(None, 24)
-        text = font.render(f"Color {self.selected_color+1}", True, (255,255,255))
-        xp_text = font.render(f"Points: {self.player_xp}", True, (255,255,255))
+        text = font.render(f"Coords: ({self.player_x:.0f} {self._get_tile_at(self.player_x, self.player_y).height*100:.0f} {self.player_y:.0f})", True, (255,255,255))
+        xp_text = font.render(f"Points: {self.player_xp:.2f}", True, (255,255,255))
         screen.blit(xp_text, (40, SCREEN_HEIGHT - 60))
-        screen.blit(text, (SCREEN_WIDTH - 150, SCREEN_HEIGHT - 80))
+        screen.blit(text, (40, SCREEN_HEIGHT - 80))
 
 
     def _increase_xp(self, amount: int):
         self.player_xp += amount
 
         # Adjust max hp accordingly
+        old_player_max = self.player_max_hp
         self.player_max_hp = PLAYER_MAX_HP + (PLAYER_MAX_HP*(self.player_xp/64))
+        self.player_hp = (self.player_hp*self.player_max_hp)/old_player_max
+        self.player_radius = PLAYER_RADIUS + (PLAYER_MAX_HP*(self.player_xp/1024))
+        self.player_range = PLAYER_ATTACK_RANGE + (PLAYER_ATTACK_RANGE*(self.player_xp/1024))
+
+
+        print(f"HP is {self.player_max_hp}")
 
     def run(self):
         init_time = datetime.datetime.now().timestamp()
@@ -667,8 +718,9 @@ class Game:
                         if 0 <= tx < WORLD_WIDTH and 0 <= ty < WORLD_HEIGHT:
                             tile = self.tiles[tx][ty]
                             # can place only on empty ground (no vegetation, no block, not water)
-                            if tile.type != "water" and tile.block_color is None and tile.vegetation is None:
+                            if tile.placeable and tile.block_color is None and tile.vegetation is None:
                                 tile.block_color = self.selected_color
+                                tile.speed_bost = 1
 
             # update
             self._handle_input(dt)
@@ -678,22 +730,25 @@ class Game:
                 # boundary
                 creature.x = max(TILE_SIZE/2, min(WORLD_WIDTH*TILE_SIZE - TILE_SIZE/2, creature.x))
                 creature.y = max(TILE_SIZE/2, min(WORLD_HEIGHT*TILE_SIZE - TILE_SIZE/2, creature.y))
-
-                # SPeed
                 creature_tile = self._get_tile_at(creature.x, creature.y)
-                creature.speed = BASE_CREATURE_SPEED * creature_tile.speed_impact
+
+                # SPeed 
+                creature.speed_temp = creature.speed * (creature_tile.speed_impact+creature_tile.speed_bost)
                 
                 creature.update(dt, self.player_x, self.player_y, self.attacks, self.player_hp)
                 # movement
+                old_creature_x = creature.x
+                old_creature_y = creature.y
+
                 creature.x += creature.vx * dt
                 creature.y += creature.vy * dt
 
-                # simple collision with water: avoid water tiles
-                tile = self._get_tile_at(creature.x, creature.y)
-                if tile and tile.type == "water":
-                    # push out
-                    creature.x -= creature.vx * dt * 2
-                    creature.y -= creature.vy * dt * 2
+                creature_tile = self._get_tile_at(creature.x, creature.y)
+
+                # Check if it's forbiden to pass though (blocks)
+
+                if creature_tile.block_color is not None:
+                    creature.x, creature.y = old_creature_x, old_creature_y 
 
             self._update_attacks(dt)
             self._update_particles(dt)
@@ -703,15 +758,13 @@ class Game:
                 self.player_hp = self.player_max_hp
                 self.player_x = WORLD_WIDTH * TILE_SIZE / 2
                 self.player_y = WORLD_HEIGHT * TILE_SIZE / 2
-                # respawn (reset game state could be optional)
+                self._increase_xp(((self.player_xp+1)*0.1)*-1) # Decreases -10% xp on death
 
             # restore player health
             now = datetime.datetime.now().timestamp()
             if now - init_time >= PLAYER_RECOVER_TIME:
-                print(f"Player health: {self.player_hp} ->", end="")
                 recovered_hp = (self.player_hp + self.player_hp * PLAYER_RECOVER_RATE)
                 self.player_hp = recovered_hp
-                print(f"{recovered_hp}")
 
                 if self.player_hp > self.player_max_hp:
                     self.player_hp= self.player_max_hp
@@ -761,12 +814,12 @@ class Game:
             # draw player
             player_screen_x = self.player_x - self.camera_x
             player_screen_y = self.player_y - self.camera_y
-            pygame.draw.circle(self.screen, COLOR_PLAYER, (int(player_screen_x), int(player_screen_y)), 16)
+            pygame.draw.circle(self.screen, COLOR_PLAYER, (int(player_screen_x), int(player_screen_y)), self.player_radius)
             # player direction indicator (mouse)
             mx, my = pygame.mouse.get_pos()
             angle = math.atan2(my - player_screen_y, mx - player_screen_x)
-            end_x = player_screen_x + math.cos(angle) * 25
-            end_y = player_screen_y + math.sin(angle) * 25
+            end_x = player_screen_x + math.cos(angle) * self.player_radius
+            end_y = player_screen_y + math.sin(angle) * self.player_radius
             pygame.draw.line(self.screen, (255,255,0), (player_screen_x, player_screen_y), (end_x, end_y), 3)
 
             # UI
