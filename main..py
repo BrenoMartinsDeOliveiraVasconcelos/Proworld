@@ -172,7 +172,7 @@ class Creature:
         # visual shape
         self.shape = random.choice(["circle"])
         self.size = random.randint(int(TILE_SIZE/4), int(TILE_SIZE*3))
-        self.speed = CREATURE_SPEED/(self.size/16)
+        self.speed = CREATURE_SPEED/(self.size/8)
         self.speed_temp = self.speed
         self.max_hp = CREATURE_HP + self.size
         self.hp = self.max_hp
@@ -668,7 +668,7 @@ class Game:
         # Texts
         font = pygame.font.SysFont(None, 24)
         text = font.render(f"Coords: ({self.player_x:.0f} {self._get_tile_at(self.player_x, self.player_y).height*100:.0f} {self.player_y:.0f})", True, (255,255,255))
-        xp_text = font.render(f"Points: {self.player_xp:.2f}", True, (255,255,255))
+        xp_text = font.render(f"Points: {self.player_xp:.2f} - ATK: {self.player_damage:.2f} - Size: {self.player_radius:.2f}", True, (255,255,255))
         screen.blit(xp_text, (40, SCREEN_HEIGHT - 60))
         screen.blit(text, (40, SCREEN_HEIGHT - 80))
 
@@ -682,6 +682,7 @@ class Game:
         self.player_hp = (self.player_hp*self.player_max_hp)/old_player_max
         self.player_radius = PLAYER_RADIUS + (PLAYER_MAX_HP*(self.player_xp/1024))
         self.player_range = PLAYER_ATTACK_RANGE + (PLAYER_ATTACK_RANGE*(self.player_xp/1024))
+        self.player_damage = PLAYER_ATTACK_DAMAGE + (PLAYER_ATTACK_DAMAGE*(self.player_xp/512))
 
 
         print(f"HP is {self.player_max_hp}")
