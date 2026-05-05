@@ -23,7 +23,7 @@ import datetime
 # ----------------------------------------------------------------------
 SCREEN_WIDTH = 1024
 SCREEN_HEIGHT = 768
-TILE_SIZE = 32
+TILE_SIZE = 16
 WORLD_WIDTH = 512   # in tiles
 WORLD_HEIGHT = 512
 
@@ -260,14 +260,12 @@ class Game:
         # Terrain type, max height (0-1), color, speed impact, possible vegetations (list of tuples containing type and chance) and allow spawn
         self.types = [
             # (Type, Max Height, Color (R,G,B), Speed Impact, [Vegetation], Allow Spawn)
-            ("deep_water",   0.35, (119, 158, 203), 0.30, [], False), 
-            ("water",        0.45, (174, 198, 207), 0.50, [], False),
-            ("sand",         0.52, (238, 217, 196), 1.25, [("bush", 0.02)], True),
-            ("dirt",         0.60, (188, 152, 126), 1.10, [("bush", 0.05), ("tree", 0.05)], True),
-            ("light_grass",  0.70, (161, 202, 165), 1.00, [("grass", 0.4), ("tree", 0.15)], True),
-            ("forest_grass", 0.80, (119, 160, 119), 0.85, [("tree", 0.5), ("bush", 0.3)], True),
-            ("gravel",       0.90, (180, 176, 170), 0.70, [("bush", 0.05)], True),
-            ("snow",         1.00, (235, 238, 240), 0.60, [], True)
+            ("deep_water",    0.35, (0, 102, 204),   0.30, [], False),
+            ("shallow_water", 0.45, (64, 164, 223),  0.50, [], False),
+            ("sand",          0.52, (255, 204, 102), 1.25, [("bush", 0.02)], True),
+            ("forest",        0.75, (76, 175, 80),   0.85, [("tree", 0.4), ("bush", 0.2)], True),
+            ("mountain",      0.90, (140, 140, 140), 0.70, [("bush", 0.05)], True),
+            ("snow",          1.00, (240, 248, 255), 0.60, [], True)
         ]
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
