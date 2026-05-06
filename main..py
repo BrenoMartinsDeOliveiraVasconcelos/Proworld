@@ -176,6 +176,7 @@ class Creature:
         self.speed_temp = self.speed
         self.max_hp = CREATURE_HP + self.size
         self.hp = self.max_hp
+        self.damage = (CREATURE_ATTACK_DAMAGE*(self.size/32))
         # random wander
         self.wander_timer = random.uniform(0, 2)
         self.wander_angle = random.uniform(0, 2*math.pi)
@@ -218,7 +219,7 @@ class Creature:
         self.attack_cooldown = CREATURE_ATTACK_COOLDOWN
         angle = math.atan2(target_y - self.y, target_x - self.x)
         attacks.append(AttackProjectile(
-            self.x, self.y, angle, self.element, damage=(CREATURE_ATTACK_DAMAGE+self.size)
+            self.x, self.y, angle, self.element, damage=self.damage
         ))
 
     def take_damage(self, amount):
@@ -681,9 +682,8 @@ class Game:
         self.player_max_hp = PLAYER_MAX_HP + (PLAYER_MAX_HP*(self.player_xp/64))
         self.player_hp = (self.player_hp*self.player_max_hp)/old_player_max
         self.player_radius = PLAYER_RADIUS + (PLAYER_MAX_HP*(self.player_xp/1024))
-        self.player_range = PLAYER_ATTACK_RANGE + (PLAYER_ATTACK_RANGE*(self.player_xp/1024))
-        self.player_damage = PLAYER_ATTACK_DAMAGE + (PLAYER_ATTACK_DAMAGE*(self.player_xp/512))
-
+        self.player_range = PLAYER_ATTACK_RANGE + self.player_radius
+        self.player_damage = PLAYER_ATTACK_DAMAGE * (self.player_radius/32)
 
         print(f"HP is {self.player_max_hp}")
 
